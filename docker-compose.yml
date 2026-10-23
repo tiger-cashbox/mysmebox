@@ -1,0 +1,56 @@
+# MySMEBox v1 — app + PostgreSQL
+# ไม่มี MinIO: อัปโหลดรูปตอบ 503 STORAGE_DISABLED ; ไม่มี Google Login: เข้าใช้ได้เฉพาะร้านทดลอง ; ไม่มี AI: ตอบ 503 AI_DISABLED
+# dev: cp .env.example .env แล้วแก้ PG_PASSWORD จากนั้น docker compose up -d --build
+# production: cp .env.prod.example .env.prod แล้ว docker compose --env-file .env.prod up -d --build
+# ค่า ${...} อ่านจากไฟล์ .env ข้างไฟล์นี้ ; host/port ของ DB ถูกตั้งเป็นชื่อ service ใน compose เสมอ
+# เปิด port ของ app ออกทุก interface (เข้าผ่าน http://<IP>:${PORT} ได้) ; DB ไม่เปิดออก host
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-8500}
+      HOST: 0.0.0.0
+      SERVE_STATIC: ${SERVE_STATIC:-1}
+      APP_ORIGIN: ${APP_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+      # ว่างไว้ให้ config.js ประกอบ URL จาก PG_* เอง (encode รหัสผ่านที่มีอักขระพิเศษให้)
+      DATABASE_URL: ""
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: ${PG_DATABASE:-mysmebox}
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:?ตั้ง PG_PASSWORD ใน .env}
+      # ปิดระบบเก็บไฟล์
+      MINIO_ENDPOINT: ""
+      # ปิด Google Login
+      GOOGLE_CLIENT_ID: ""
+      # ปิด AI (Ollama)
+      OLLAMA_API_KEY: ""
+    ports:
+      - "${PORT:-8500}:${PORT:-8500}"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-mysmebox}
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?ตั้ง PG_PASSWORD ใน .env}
+      TZ: Asia/Bangkok
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # ไม่เปิด port ออก host (host มี DB container อื่นอยู่แล้ว) — ต่อจาก host ใช้ docker compose exec postgres psql
+
+volumes:
+  pgdata:
